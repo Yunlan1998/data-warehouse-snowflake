@@ -1,0 +1,141 @@
+// Alter suppliers table
+ALTER TABLE suppliers
+-- Add new column
+ADD COLUMN IF NOT EXISTS region VARCHAR(255);
+
+// Alter suppliers table
+ALTER TABLE suppliers
+-- Add the new column
+ADD COLUMN IF NOT EXISTS contact VARCHAR(255);
+
+// Alter suppliers table
+ALTER TABLE suppliers
+-- Assign the unique identifier
+ADD PRIMARY KEY (supplier_id);
+
+// Create entity
+CREATE OR REPLACE TABLE batchdetails (
+	-- Add numerical attribute
+	batch_id NUMBER(10,0),
+	-- Add characters attributes
+    batch_number VARCHAR(255),
+    production_notes VARCHAR(255)
+);
+
+// Modify the entity
+ALTER TABLE productqualityrating
+-- Add new column
+ADD COLUMN IF NOT EXISTS batch_id NUMBER(10,0);
+
+// Check product in each manufacturer and location
+SELECT manufacturer, 
+	company_location,
+    -- Add a count of all the records, and set an alias for it
+	COUNT(*) AS product_count
+FROM productqualityrating
+-- Group the results
+GROUP BY manufacturer, 
+	company_location;
+
+// Identify data redundancy
+SELECT manufacturer, 
+	company_location, 
+	COUNT(*) AS product_count
+FROM productqualityrating
+GROUP BY manufacturer, 
+	company_location
+-- Add a filter for occurrence count greater than 1
+having product_count >1;
+
+// Identify anomalies
+SELECT manufacturer, 
+	COUNT(DISTINCT cocoa_percent, ingredients) AS distinct_combinations
+FROM productqualityrating
+WHERE bar_name = 'Arriba' 
+    AND year_reviewed > 2006 
+GROUP BY manufacturer
+-- Add the clause to filter
+HAVING COUNT(DISTINCT cocoa_percent, ingredients) > 1;
+
+// Create a new entity
+CREATE OR REPLACE TABLE ingredients (
+	-- Add unique identifier 
+    ingredient_id NUMBER(10,0) PRIMARY KEY,
+  	-- Add other attributes 
+    ingredient VARCHAR(255)
+);
+
+//Create a new entity
+CREATE OR REPLACE TABLE reviews (
+	-- Add unique identifier 
+    review_id NUMBER(10,0) PRIMARY KEY,
+  	-- Add other attributes 
+    review VARCHAR(255)
+);
+
+//Applying 1NF
+// Check seperate ingredient values
+SELECT TRIM(f.value)
+FROM productqualityrating,
+LATERAL FLATTEN (INPUT => SPLIT (productqualityrating.ingredients, ';')) f;
+
+//Modify script for ingredient
+INSERT INTO ingredients (ingredient_id, ingredient)
+SELECT 
+   ROW_NUMBER()OVER(ORDER BY TRIM(f.value)),
+   TRIM(f.value)
+FROM productqualityrating,
+LATERAL FLATTEN (INPUT => SPLIT (productqualityrating.ingredients, ';')) f
+GROUP BY TRIM(f.value);
+
+// Modify script for review
+INSERT INTO reviews (review_id, review)
+SELECT
+	ROW_NUMBER() OVER (ORDER BY TRIM(f.value)),
+	TRIM(f.value)
+FROM productqualityrating,
+LATERAL FLATTEN(INPUT => SPLIT(productqualityrating.review, ';')) f
+GROUP BY TRIM(f.value);
+
+//Applying 2NF
+// Add new entity
+CREATE OR REPLACE TABLE manufacturers (
+	-- Assign unique identifier
+  	manufacturer_id NUMBER(10,0) PRIMARY KEY,
+  	--Add other attributes
+  	manufacturer VARCHAR(255),
+  	company_location VARCHAR(255)
+);
+
+// Add values to manufacturers
+INSERT INTO manufacturers (manufacturer_id, manufacturer, company_location)
+SELECT 
+	-- Generate a sequential number
+	ROW_NUMBER() OVER (ORDER BY manufacturer, company_location),
+	manufacturer, 
+	company_location
+FROM productqualityrating
+-- Aggregate data by the other attributes
+GROUP BY manufacturer, 
+	company_location;   
+
+// Create entity locations
+CREATE OR REPLACE TABLE locations (
+	-- Add unique identifier
+  	location_id NUMBER(10,0) PRIMARY KEY,
+  	-- Add main attribute
+  	location VARCHAR(255)
+);
+
+//Add values to location entity
+INSERT INTO locations (location_id, location)
+SELECT 
+  ROW_NUMBER()OVER (ORDER BY company_location),
+  company_location
+FROM manufacturers
+GROUP BY company_location;
+
+// Modify entity
+ALTER TABLE manufacturers
+-- Remove attribute
+DROP COLUMN IF EXISTS company_location;
